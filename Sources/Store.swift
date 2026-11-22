@@ -41,6 +41,38 @@ final class Store: ObservableObject {
         }
     }
 
+    private var watchers: [FolderWatcher] = []
+
+    /// Yangi .dmg/.pkg yuklansa, Savatga fayl tushsa yoki ilova o'chirilsa — tegishli toifa o'zi yangilanadi.
+    func startWatching() {
+        guard watchers.isEmpty else { return }
+        let home = Scanner.home
+        let spots = ["Downloads", "Desktop", "Documents"].map { home.appendingPathComponent($0).path }
+        if let w = FolderWatcher(paths: spots, latency: 3, onChange: { [weak self] _ in self?.rescan([.installers]) }) { watchers.append(w) }
+        if let w = FolderWatcher(paths: [home.appendingPathComponent(".Trash").path], latency: 3, onChange: { [weak self] _ in self?.rescan([.trash]) }) { watchers.append(w) }
+        let apps = ["/Applications", home.appendingPathComponent("Applications").path]
+        if let w = FolderWatcher(paths: apps, latency: 5, onChange: { [weak self] _ in self?.rescan([.leftovers]) }) { watchers.append(w) }
+    }
+
+    /// Toifani qayta skanerlaydi, foydalanuvchi qo'lda qilgan tanlovni saqlab.
+    func rescan(_ categories: [Category]) {
+        guard !cleaning else { return }
+        disk = .current()
+        for category in categories where !scanning.contains(category) && items[category] != nil {
+            let before = Dictionary((items[category] ?? []).map { ($0.id, $0.selected) }, uniquingKeysWith: { a, _ in a })
+            scanning.insert(category)
+            Task.detached(priority: .utility) {
+                var found = Scanner.scan(category)
+                for i in found.indices { if let was = before[found[i].id] { found[i].selected = was } }
+                let result = found
+                await MainActor.run {
+                    self.items[category] = result
+                    self.scanning.remove(category)
+                }
+            }
+        }
+    }
+
     func selectedSize(_ category: Category) -> Int64 {
         (items[category] ?? []).filter(\.selected).reduce(0) { $0 + $1.size }
     }

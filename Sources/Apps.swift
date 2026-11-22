@@ -79,11 +79,14 @@ enum AppScanner {
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
 
-    /// macOS ilovalari va Farrosh'ning o'zi uchun nil qaytaradi — ularni o'chirib bo'lmaydi.
+    /// macOS'ning o'z ilovalari va Farrosh'ning o'zi uchun nil qaytaradi — ularni o'chirib bo'lmaydi.
+    /// Apple'ning App Store'dan o'rnatiladigan ilovalari (Xcode, Pages, Keynote, Logic Pro…) ro'yxatda qoladi:
+    /// ular oddiy ilova kabi /Applications'da turadi. Safari kabi tizim ilovalari esa aslida
+    /// faqat o'qiladigan tizim diskida (/System/...) joylashgan, /Applications'da faqat havolasi bor.
     static func appInfo(for url: URL) -> AppInfo? {
         let bundle = Bundle(url: url)
         let id = bundle?.bundleIdentifier ?? ""
-        if id.hasPrefix("com.apple.") || id == Bundle.main.bundleIdentifier { return nil }
+        if id == Bundle.main.bundleIdentifier || isSystemApp(url) { return nil }
         let version = bundle?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
 
         var intelOnly = false
@@ -96,6 +99,13 @@ enum AppScanner {
             url: url, name: url.deletingPathExtension().lastPathComponent, bundleID: id,
             version: version, isIntelOnly: intelOnly
         )
+    }
+
+    /// Ilova tizim diskida (macOS bilan birga keladigan, o'chirib bo'lmaydigan) joylashganmi.
+    static func isSystemApp(_ url: URL) -> Bool {
+        let real = url.resolvingSymlinksInPath().path
+        if real.hasPrefix("/System/") { return true }
+        return (try? url.resolvingSymlinksInPath().resourceValues(forKeys: [.volumeIsReadOnlyKey]))?.volumeIsReadOnly == true
     }
 
     /// Spotlight yozib boradigan "oxirgi ochilgan" sana.
@@ -244,6 +254,56 @@ final class AppsStore: ObservableObject {
         guard !loading else { return }
         apps = []
         load()
+    }
+
+    private var watcher: FolderWatcher?
+
+    /// /Applications'ga ilova qo'shilsa yoki undan olib tashlansa, ro'yxat o'zi yangilanadi.
+    func startWatching() {
+        guard watcher == nil else { return }
+        let paths = ["/Applications", Scanner.home.appendingPathComponent("Applications").path]
+        watcher = FolderWatcher(paths: paths) { [weak self] changed in
+            // Ilova ichidagi fayllar (yangilanish, kesh) emas — faqat ilovaning o'zi qo'shilgan/olingan bo'lsa.
+            guard changed.contains(where: Self.touchesAppBundle) else { return }
+            self?.refresh()
+        }
+    }
+
+    private static func touchesAppBundle(_ path: String) -> Bool {
+        let parts = path.split(separator: "/")
+        guard let i = parts.firstIndex(where: { $0.hasSuffix(".app") }) else {
+            return true // papkaning o'zi o'zgardi
+        }
+        return i == parts.count - 1
+    }
+
+    /// Ro'yxatni tozalamasdan yangilaydi: yangi ilovalar qo'shiladi, o'chirilganlari olib tashlanadi,
+    /// tanlov va hisoblangan hajmlar saqlanadi.
+    func refresh() {
+        guard !loading else { return }
+        Task.detached(priority: .utility) {
+            let fresh = AppScanner.installedApps()
+            let known = await MainActor.run { Set(self.apps.map(\.id)) }
+            let added = fresh.filter { !known.contains($0.id) }
+            let ids = Set(fresh.map(\.id))
+            await MainActor.run {
+                self.apps.removeAll { !ids.contains($0.id) }
+                self.checked.formIntersection(ids)
+                if let sel = self.selectedID, !ids.contains(sel) { self.selectedID = nil }
+                self.apps.append(contentsOf: added)
+                self.apps.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            }
+            for app in added {
+                let size = Scanner.size(of: app.url)
+                let used = AppScanner.lastUsed(app.url)
+                await MainActor.run {
+                    if let i = self.apps.firstIndex(where: { $0.id == app.id }) {
+                        self.apps[i].size = size
+                        self.apps[i].lastUsed = used
+                    }
+                }
+            }
+        }
     }
 
     func remove(_ app: AppInfo) {

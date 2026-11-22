@@ -73,6 +73,27 @@ enum LargeFileScanner {
         return found.sorted { $0.size > $1.size }
     }
 
+    /// Bitta faylni tekshiradi: ro'yxatga mos bo'lsa LargeFile, aks holda nil.
+    static func check(_ url: URL) -> LargeFile? {
+        let home = Scanner.home.path
+        let path = url.path
+        guard path.hasPrefix(home + "/"), !path.hasPrefix(home + "/Library/") else { return nil }
+        let rel = path.dropFirst(home.count + 1).split(separator: "/")
+        // Yashirin papkalar, paketlar ichi va kutubxona papkalari skanerdagi kabi o'tkazib yuboriladi.
+        if rel.contains(where: { $0.hasPrefix(".") || skipNames.contains(String($0)) }) { return nil }
+        if rel.dropLast().contains(where: { $0.contains(".") && isPackage(String($0)) }) { return nil }
+        let keys: Set<URLResourceKey> = [.isRegularFileKey, .totalFileAllocatedSizeKey, .fileSizeKey, .contentModificationDateKey]
+        guard let v = try? url.resourceValues(forKeys: keys), v.isRegularFile == true else { return nil }
+        let size = Int64(v.totalFileAllocatedSize ?? v.fileSize ?? 0)
+        guard size >= floor, !Scanner.isCloudOnly(url) else { return nil }
+        return LargeFile(url: url, size: size, date: lastUsed(url) ?? v.contentModificationDate)
+    }
+
+    private static func isPackage(_ name: String) -> Bool {
+        ["app", "photoslibrary", "bundle", "framework", "pkg", "musiclibrary", "fcpbundle", "logicx", "xcarchive"]
+            .contains((name as NSString).pathExtension.lowercased())
+    }
+
     private static func lastUsed(_ url: URL) -> Date? {
         guard let item = MDItemCreateWithURL(nil, url as CFURL) else { return nil }
         return MDItemCopyAttribute(item, kMDItemLastUsedDate) as? Date
@@ -128,6 +149,37 @@ final class LargeFilesStore: ObservableObject {
                 self.selected = self.selected.filter { id in found.contains { $0.id == id } }
                 self.scanning = false
                 self.scanned = true
+            }
+        }
+    }
+
+    private var watcher: FolderWatcher?
+
+    /// Uy papkasida katta fayl paydo bo'lsa, o'zgarsa yoki o'chirilsa — ro'yxat qayta skanerlashsiz yangilanadi.
+    func startWatching() {
+        guard watcher == nil else { return }
+        watcher = FolderWatcher(paths: [Scanner.home.path], latency: 3) { [weak self] paths in
+            self?.apply(Set(paths))
+        }
+    }
+
+    private func apply(_ paths: Set<String>) {
+        guard scanned, !scanning else { return }
+        let home = Scanner.home.path
+        let relevant = paths.filter { !$0.hasPrefix(home + "/Library/") }
+        guard !relevant.isEmpty else { return }
+        Task.detached(priority: .utility) {
+            var updates: [String: LargeFile?] = [:]
+            for path in relevant { updates[path] = LargeFileScanner.check(URL(fileURLWithPath: path)) }
+            let result = updates
+            await MainActor.run {
+                for (path, file) in result {
+                    // Papka o'chirilgan yoki ko'chirilgan bo'lsa, ichidagilar ham ketadi.
+                    self.files.removeAll { $0.id == path || ($0.id.hasPrefix(path + "/") && !FileManager.default.fileExists(atPath: $0.id)) }
+                    if let file { self.files.append(file) }
+                }
+                self.files.sort { $0.size > $1.size }
+                self.selected = self.selected.filter { id in self.files.contains { $0.id == id } }
             }
         }
     }

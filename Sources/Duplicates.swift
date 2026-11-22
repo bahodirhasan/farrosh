@@ -119,6 +119,18 @@ final class DuplicatesStore: ObservableObject {
         }
     }
 
+    private var watcher: FolderWatcher?
+
+    /// Yuklanmalar, Hujjatlar yoki Ish stoliga fayl qo'shilsa/o'chirilsa — dublikatlar qayta qidiriladi.
+    func startWatching() {
+        guard watcher == nil else { return }
+        watcher = FolderWatcher(paths: DuplicateScanner.roots.map(\.path), latency: 5) { [weak self] paths in
+            guard let self, self.scanned, !self.scanning, !self.working else { return }
+            let visible = paths.contains { !$0.split(separator: "/").contains { $0.hasPrefix(".") } }
+            if visible { self.scan() }
+        }
+    }
+
     /// Bitta nusxa doim qoladi — guruhdagi oxirgi tanlanmagan faylni tanlab bo'lmaydi.
     func toggle(_ file: DuplicateFile, in group: DuplicateGroup) {
         if selected.contains(file.id) {

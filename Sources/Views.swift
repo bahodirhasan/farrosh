@@ -148,6 +148,11 @@ struct ContentView: View {
             // Til almashganda qayta skanerlash shart emas.
             if store.items.isEmpty && store.scanning.isEmpty { store.scan() }
             if apps.apps.isEmpty { apps.load() }
+            // Yangi ilova yoki fayl paydo bo'lsa, ro'yxatlar qayta ochishsiz yangilanadi.
+            store.startWatching()
+            apps.startWatching()
+            largeFiles.startWatching()
+            duplicates.startWatching()
             background.openMain = { openWindow(id: "main") }
         }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
