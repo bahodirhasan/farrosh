@@ -715,6 +715,11 @@ final class AppDetailModel: ObservableObject {
             for url in urls {
                 do { try Remover.discard(url) } catch { failed.append(url) }
             }
+            // Administrator o'rnatgan ilova (Xcode kabi): macOS parol so'raydi.
+            if failed.contains(app.url) {
+                let done = await MainActor.run { Remover.discardAsAdmin([app.url]) }
+                failed.removeAll { done.contains($0) }
+            }
             let appFailed = failed.contains(app.url)
             let leftFiles = failed.filter { $0 != app.url }.count
 
@@ -723,7 +728,7 @@ final class AppDetailModel: ObservableObject {
                 if appFailed {
                     self.result = AppActionResult(
                         title: L("Ilovani o'chirib bo'lmadi", "Couldn't uninstall the app", "Не удалось удалить приложение"),
-                        message: L("\(app.name) administrator nomidan o'rnatilgan, uni o'chirish uchun parol kerak. Finder'da ilovani Savatga sudrab tashlang — macOS parolni so'raydi.", "\(app.name) was installed by an administrator, so removing it needs a password. Drag the app to the Trash in Finder — macOS will ask for the password.", "\(app.name) установлено администратором, для удаления нужен пароль. Перетащите приложение в Корзину в Finder — macOS запросит пароль.")
+                        message: L("\(app.name) administrator nomidan o'rnatilgan, uni o'chirish uchun parol kerak, lekin parol kiritilmadi. Qaytadan urinib ko'ring yoki Finder'da Savatga sudrab tashlang.", "\(app.name) was installed by an administrator and needs a password to remove, but the password wasn't entered. Try again or drag it to the Trash in Finder.", "\(app.name) установлено администратором, для удаления нужен пароль, но он не был введён. Попробуйте ещё раз или перетащите приложение в Корзину в Finder.")
                             + (urls.count > 1 ? L(" Ilova fayllari Savatga ko'chirildi.", " The app's files were moved to the Trash.", " Файлы приложения перемещены в Корзину.") : ""),
                         success: false, removed: false, reveal: app.url
                     )
@@ -988,6 +993,7 @@ final class BulkUninstallModel: ObservableObject {
         Task.detached(priority: .userInitiated) {
             var removed: [AppInfo] = []
             var failed: [String] = []
+            var needAdmin: [(AppInfo, [URL], Int64)] = []
             var total: Int64 = 0
             for (i, app) in targets.enumerated() {
                 await MainActor.run { self.progress = L("\(app.name) o'chirilmoqda… (\(i + 1)/\(targets.count))", "Uninstalling \(app.name)… (\(i + 1)/\(targets.count))", "Удаляем \(app.name)… (\(i + 1)/\(targets.count))") }
@@ -1000,7 +1006,21 @@ final class BulkUninstallModel: ObservableObject {
                     removed.append(app)
                     total += (app.size ?? 0) + files.reduce(0) { $0 + $1.size }
                 } catch {
-                    failed.append(app.name)
+                    needAdmin.append((app, urls.filter { $0 != app.url }, files.reduce(0) { $0 + $1.size }))
+                }
+            }
+            // Parol kerak bo'lganlar uchun macOS bitta oynada bir marta so'raydi.
+            if !needAdmin.isEmpty {
+                let appURLs = needAdmin.map { $0.0.url }
+                let done = await MainActor.run { Remover.discardAsAdmin(appURLs) }
+                for (app, rest, filesSize) in needAdmin {
+                    if done.contains(app.url) {
+                        for url in rest { try? Remover.discard(url) }
+                        removed.append(app)
+                        total += (app.size ?? 0) + filesSize
+                    } else {
+                        failed.append(app.name)
+                    }
                 }
             }
             let skipped = apps.filter { still.contains($0.id) }.map(\.name)
@@ -1014,9 +1034,9 @@ final class BulkUninstallModel: ObservableObject {
                                 "\(removed.count) apps, \(total.bytes) \(Remover.doneVerb).",
                                 "Приложений: \(removed.count), \(total.bytes) \(Remover.doneVerb).")
                 if !failed.isEmpty {
-                    message += L(" O'chmadi (parol kerak): \(failed.joined(separator: ", ")) — ularni Finder'da Savatga sudrab tashlang.",
-                                 " Not removed (needs a password): \(failed.joined(separator: ", ")) — drag them to the Trash in Finder.",
-                                 " Не удалены (нужен пароль): \(failed.joined(separator: ", ")) — перетащите их в Корзину в Finder.")
+                    message += L(" O'chmadi: \(failed.joined(separator: ", ")) — administrator paroli kiritilmadi. Qaytadan urinib ko'ring yoki Finder'da Savatga sudrab tashlang.",
+                                 " Not removed: \(failed.joined(separator: ", ")) — the administrator password wasn't entered. Try again or drag them to the Trash in Finder.",
+                                 " Не удалены: \(failed.joined(separator: ", ")) — пароль администратора не введён. Попробуйте ещё раз или перетащите их в Корзину в Finder.")
                 }
                 if !skipped.isEmpty {
                     message += L(" Ochiq qolgani uchun tegilmadi: \(skipped.joined(separator: ", ")).",

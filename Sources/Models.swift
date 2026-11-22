@@ -19,6 +19,40 @@ enum Remover {
         }
     }
 
+    /// Administrator nomidan o'rnatilgan ilovalar (Xcode, App Store ilovalari) uchun: macOS'ning o'z parol
+    /// oynasini ko'rsatadi va ilovalarni bitta ruxsat bilan Savatga ko'chiradi (yoki butunlay o'chiradi).
+    /// Parolni Farrosh ko'rmaydi — uni tizim so'raydi. Faqat Applications papkalaridagi .app'lar qabul qilinadi.
+    /// Muvaffaqiyatli o'chirilganlarini qaytaradi; foydalanuvchi bekor qilsa — bo'sh to'plam.
+    @MainActor
+    static func discardAsAdmin(_ urls: [URL]) -> Set<URL> {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let allowed = urls.filter { url in
+            let p = url.standardizedFileURL.path
+            return url.pathExtension == "app" && !p.contains("/../")
+                && (p.hasPrefix("/Applications/") || p.hasPrefix(home + "/Applications/"))
+        }
+        guard !allowed.isEmpty else { return [] }
+        func q(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+        let trash = home + "/.Trash"
+        let stamp = Int(Date().timeIntervalSince1970)
+        let commands = allowed.map { url -> String in
+            if permanent { return "/bin/rm -rf \(q(url.path))" }
+            var dest = trash + "/" + url.lastPathComponent
+            if FileManager.default.fileExists(atPath: dest) {
+                dest = trash + "/" + url.deletingPathExtension().lastPathComponent + " \(stamp).app"
+            }
+            return "/bin/mv \(q(url.path)) \(q(dest))"
+        }
+        let shell = commands.joined(separator: "; ")
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let prompt = L("Farrosh ilovani o'chirmoqchi.", "Farrosh wants to uninstall an app.", "Farrosh хочет удалить приложение.")
+        let source = "do shell script \"\(shell)\" with prompt \"\(prompt)\" with administrator privileges"
+        var error: NSDictionary?
+        NSAppleScript(source: source)?.executeAndReturnError(&error)
+        return Set(allowed.filter { !FileManager.default.fileExists(atPath: $0.path) })
+    }
+
     /// "Savatga ko'chirildi" yoki "butunlay o'chirildi".
     static var doneVerb: String {
         permanent ? L("butunlay o'chirildi", "deleted permanently", "удалены навсегда")
