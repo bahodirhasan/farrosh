@@ -106,6 +106,7 @@ final class Store: ObservableObject {
         }
         guard !jobs.isEmpty else { return }
         cleaning = true
+        let started = Date()
 
         Task.detached(priority: .userInitiated) {
             let fm = FileManager.default
@@ -133,6 +134,7 @@ final class Store: ObservableObject {
             }
 
             let summary = CleanResult(freed: max(0, freed), movedToTrash: max(0, moved), failed: failed)
+            await AnimationPacing.holdUntilVisible(since: started)
             await MainActor.run {
                 self.cleaning = false
                 self.result = summary

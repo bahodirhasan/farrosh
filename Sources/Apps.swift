@@ -1,4 +1,5 @@
 import SwiftUI
+import ServiceManagement
 import CoreServices
 
 // MARK: - Ma'lumotlar
@@ -13,6 +14,9 @@ struct AppInfo: Identifiable, Hashable {
     var size: Int64?
     var lastUsed: Date?
     var id: String { url.path }
+
+    /// Farrosh'ning o'zi — uni ham o'chirish mumkin, lekin oxirida dastur yopiladi.
+    var isSelf: Bool { bundleID == Bundle.main.bundleIdentifier }
 
     /// 90 kundan beri ochilmagan.
     var isUnused: Bool {
@@ -86,7 +90,7 @@ enum AppScanner {
     static func appInfo(for url: URL) -> AppInfo? {
         let bundle = Bundle(url: url)
         let id = bundle?.bundleIdentifier ?? ""
-        if id == Bundle.main.bundleIdentifier || isSystemApp(url) { return nil }
+        if isSystemApp(url) { return nil }
         let version = bundle?.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
 
         var intelOnly = false
@@ -192,7 +196,7 @@ final class AppsStore: ObservableObject {
     var selectedApp: AppInfo? { apps.first { $0.id == selectedID } }
 
     /// Farrosh o'zini o'chira olmaydi.
-    static func canCheck(_ app: AppInfo) -> Bool { app.bundleID != Bundle.main.bundleIdentifier }
+    static func canCheck(_ app: AppInfo) -> Bool { true }
 
     var checkedApps: [AppInfo] { apps.filter { checked.contains($0.id) } }
     var checkedSize: Int64 { checkedApps.reduce(0) { $0 + ($1.size ?? 0) } }
@@ -571,6 +575,8 @@ final class AppDetailModel: ObservableObject {
     @Published var confirmUninstall = false
     @Published var askQuit = false
     @Published var confirmReset = false
+    /// Hozir bajarilayotgan ish — animatsiya kartasida ko'rsatiladi.
+    @Published var activity = ""
     /// Ilova yopilgach bajariladigan amal.
     private var afterQuit: (() -> Void)?
     @Published var result: AppActionResult?
@@ -582,7 +588,8 @@ final class AppDetailModel: ObservableObject {
     }
 
     var isRunning: Bool {
-        !NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID).isEmpty
+        // Farrosh o'zini o'chirayotganda yopishni so'ramaydi — ish tugagach o'zi yopiladi.
+        !app.isSelf && !NSRunningApplication.runningApplications(withBundleIdentifier: app.bundleID).isEmpty
     }
 
     var cacheItems: [CleanItem] { FileKind.allCases.filter(\.isCache).flatMap { files[$0] ?? [] } }
@@ -610,7 +617,9 @@ final class AppDetailModel: ObservableObject {
 
     func clearCache() {
         let items = cacheItems
+        activity = L("Kesh tozalanmoqda…", "Clearing cache…", "Очистка кэша…")
         working = true
+        let started = Date()
         Task.detached(priority: .userInitiated) {
             let fm = FileManager.default
             let before = items.reduce(0) { $0 + $1.size }
@@ -620,6 +629,7 @@ final class AppDetailModel: ObservableObject {
             }
             let left = Scanner.size(of: items.flatMap(\.urls))
             let freed = max(0, before - left)
+            await AnimationPacing.holdUntilVisible(since: started)
             await MainActor.run {
                 self.working = false
                 self.result = AppActionResult(
@@ -655,6 +665,7 @@ final class AppDetailModel: ObservableObject {
 
     /// Ilovani qoldirib, barcha sozlama va ma'lumotlarini o'chiradi — xuddi yangi o'rnatilgandek.
     func reset() {
+        activity = L("Asl holatiga qaytarilmoqda…", "Resetting…", "Сброс…")
         working = true
         let app = app
         let urls = outermost(files.values.joined().flatMap(\.urls))
@@ -705,8 +716,10 @@ final class AppDetailModel: ObservableObject {
     }
 
     func uninstall() {
+        activity = L("O'chirilmoqda…", "Uninstalling…", "Удаление…")
         working = true
         let app = app
+        if app.isSelf { SelfRemoval.prepare() }
         let urls = outermost([app.url] + selectedFiles.flatMap(\.urls))
         let total = uninstallSize
 
@@ -733,10 +746,12 @@ final class AppDetailModel: ObservableObject {
                         success: false, removed: false, reveal: app.url
                     )
                 } else {
+                    if app.isSelf { SelfRemoval.removed = true }
                     self.result = AppActionResult(
                         title: L("\(app.name) o'chirildi", "\(app.name) uninstalled", "\(app.name) удалено"),
                         message: "\(total.bytes) \(Remover.doneVerb)."
                             + (Remover.permanent ? "" : L(" Savatni bo'shatsangiz, bu joy bo'shaydi.", " Empty the Trash to free this space.", " Очистите Корзину, чтобы освободить место."))
+                            + (app.isSelf ? SelfRemoval.note : "")
                             + (leftFiles > 0 ? L(" \(leftFiles) ta fayl ko'chmadi (band yoki himoyalangan).", " \(leftFiles) files weren't moved (in use or protected).", " Не перемещено файлов: \(leftFiles) (заняты или защищены).") : ""),
                         success: true, removed: true
                     )
@@ -785,7 +800,7 @@ struct AppDetailView: View {
                     }
                     Spacer()
                     Button(L("Qaytarish", "Reset", "Сбросить")) { model.requestReset() }
-                        .disabled(model.working || model.loading || model.files.isEmpty)
+                        .disabled(model.working || model.loading || model.files.isEmpty || model.app.isSelf)
                 }
                 .padding(.vertical, 3)
                 .alert(L("\(model.app.name) asl holatiga qaytarilsinmi?", "Reset \(model.app.name)?", "Сбросить \(model.app.name)?"), isPresented: $model.confirmReset) {
@@ -823,6 +838,13 @@ struct AppDetailView: View {
             }
         }
         .formStyle(.grouped)
+        .overlay {
+            if model.working {
+                CleaningOverlay(title: model.activity.isEmpty ? L("Bajarilmoqda…", "Working…", "Выполняется…") : model.activity,
+                                subtitle: model.app.name)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: model.working)
         .navigationTitle(model.app.name)
         .safeAreaInset(edge: .bottom) { actionBar }
         .alert(L("Keshni tozalash", "Clear cache", "Очистить кэш"), isPresented: $model.confirmCache) {
@@ -835,6 +857,7 @@ struct AppDetailView: View {
             AppResultView(result: result) {
                 model.result = nil
                 if result.removed { onRemoved() }
+                SelfRemoval.quitIfRemoved()
             }
         }
         .task { model.load() }
@@ -922,9 +945,7 @@ struct AppResultView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: result.success ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                .font(.system(size: 60))
-                .foregroundStyle(result.success ? Color.green : Color.yellow)
+            SuccessBadge(success: result.success, size: 60)
                 .padding(.top, 8)
             Text(result.title)
                 .font(.title2.weight(.bold))
@@ -959,7 +980,7 @@ final class BulkUninstallModel: ObservableObject {
     @Published var result: AppActionResult?
 
     func running(_ apps: [AppInfo]) -> [AppInfo] {
-        apps.filter { !NSRunningApplication.runningApplications(withBundleIdentifier: $0.bundleID).isEmpty }
+        apps.filter { !$0.isSelf && !NSRunningApplication.runningApplications(withBundleIdentifier: $0.bundleID).isEmpty }
     }
 
     func request(_ apps: [AppInfo]) {
@@ -987,7 +1008,9 @@ final class BulkUninstallModel: ObservableObject {
         let leftovers = includeLeftovers
         // Hali ochiq qolganlarga tegmaymiz.
         let still = Set(running(apps).map(\.id))
-        let targets = apps.filter { !still.contains($0.id) }
+        // Farrosh'ning o'zi eng oxirida o'chiriladi.
+        let targets = apps.filter { !still.contains($0.id) }.sorted { !$0.isSelf && $1.isSelf }
+        if targets.contains(where: \.isSelf) { SelfRemoval.prepare() }
         working = true
 
         Task.detached(priority: .userInitiated) {
@@ -1028,6 +1051,7 @@ final class BulkUninstallModel: ObservableObject {
             await MainActor.run {
                 let removed = removedApps, failed = failedNames, total = freed
                 for app in removed { store.remove(app); onRemoved(app) }
+                if removed.contains(where: \.isSelf) { SelfRemoval.removed = true }
                 self.working = false
                 self.progress = ""
                 var message = L("\(removed.count) ta ilova, \(total.bytes) \(Remover.doneVerb).",
@@ -1043,6 +1067,7 @@ final class BulkUninstallModel: ObservableObject {
                                  " Left alone because still open: \(skipped.joined(separator: ", ")).",
                                  " Не тронуты, так как открыты: \(skipped.joined(separator: ", ")).")
                 }
+                if removed.contains(where: \.isSelf) { message += SelfRemoval.note }
                 self.result = AppActionResult(
                     title: removed.isEmpty ? L("Ilovalar o'chirilmadi", "No apps were uninstalled", "Приложения не удалены")
                                            : L("\(removed.count) ta ilova o'chirildi", "\(removed.count) apps uninstalled", "Удалено приложений: \(removed.count)"),
@@ -1158,7 +1183,27 @@ struct BulkUninstallView: View {
                    "\(model.runningNames.joined(separator: ", ")) открыты. Их нужно закрыть — сохраните несохранённое."))
         }
         .sheet(item: $model.result) { result in
-            AppResultView(result: result) { model.result = nil }
+            AppResultView(result: result) { model.result = nil; SelfRemoval.quitIfRemoved() }
         }
+    }
+}
+
+/// Farrosh o'zini o'chirganda: kirishda ochilishni o'chiradi va natija oynasi yopilgach dasturni yopadi.
+@MainActor
+enum SelfRemoval {
+    static var removed = false
+
+    static var note: String {
+        L(" Farrosh yopiladi.", " Farrosh will now quit.", " Farrosh сейчас закроется.")
+    }
+
+    /// Mac yonganda Farrosh ochilmasin.
+    static func prepare() {
+        try? SMAppService.mainApp.unregister()
+    }
+
+    static func quitIfRemoved() {
+        guard removed else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) }
     }
 }

@@ -267,6 +267,12 @@ struct DuplicatesView: View {
                    "\(store.selectedCount) copies (\(store.selectedSize.bytes)) will be moved to the Trash. At least one copy of each file stays.",
                    "Копий: \(store.selectedCount) (\(store.selectedSize.bytes)) будут перемещены в Корзину. Хотя бы одна копия каждого файла останется."))
         }
+        .overlay {
+            if store.working {
+                CleaningOverlay(title: L("Savatga ko'chirilmoqda…", "Moving to the Trash…", "Перемещение в Корзину…"), color: .orange)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: store.working)
         .sheet(item: $store.result) { ResultView(result: $0) }
         .task { if !store.scanned { store.scan() } }
     }

@@ -134,6 +134,12 @@ struct ContentView: View {
         } message: {
             Text(confirmMessage)
         }
+        .overlay {
+            if store.cleaning {
+                CleaningOverlay(subtitle: store.selectedSize(of: ui.cleanScope).bytes)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: store.cleaning)
         .sheet(item: $store.result) { ResultView(result: $0) }
         .sheet(item: $background.trashedApp) { trashed in
             TrashedAppSheet(trashed: trashed) {
@@ -633,12 +639,12 @@ struct ResultView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 64))
-                .foregroundStyle(.green)
+            SuccessBadge()
                 .padding(.top, 8)
-            Text(L("\(result.freed.bytes) bo'shatildi", "\(result.freed.bytes) freed", "Освобождено \(result.freed.bytes)"))
-                .font(.title.weight(.bold))
+            CountingBytes(bytes: result.freed) { size in
+                L("\(size) bo'shatildi", "\(size) freed", "Освобождено \(size)")
+            }
+            .font(.title.weight(.bold))
             if result.movedToTrash > 0 {
                 Text(L("\(result.movedToTrash.bytes) Savatga ko'chirildi. Savatni bo'shatsangiz, bu joy ham bo'shaydi.", "\(result.movedToTrash.bytes) moved to the Trash. Empty the Trash to free this space too.", "\(result.movedToTrash.bytes) перемещено в Корзину. Очистите Корзину, чтобы освободить и это место."))
                     .multilineTextAlignment(.center)
