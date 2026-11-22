@@ -1,5 +1,9 @@
 # Farrosh
 
+### ⬇️ [Dasturni yuklab olish — Farrosh.zip](https://github.com/bahodirhasan/farrosh/releases/latest/download/Farrosh.zip)
+
+*macOS uchun tayyor dastur. Yuklab oling → oching → Applications papkasiga ko'chiring → birinchi marta o'ng tugma → Ochish (Open).*
+
 Mac'ni keraksiz fayllardan tozalaydigan dastur: kesh, loglar, eski o'rnatish fayllari, o'chirilgan ilovalar qoldig'i va boshqalar. Interfeys o'zbek, ingliz va rus tillarida.
 
 *A macOS cleanup app (caches, logs, installers, leftovers of removed apps, large files, duplicates). Uzbek, English and Russian.*
