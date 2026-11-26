@@ -463,6 +463,7 @@ struct StartupRow: View {
                     Image(systemName: "arrow.right.circle.fill").font(.system(size: 17)).foregroundStyle(.secondary)
                 }
                 .buttonStyle(.borderless)
+                .accessibilityLabel(L("Finder'da ko'rsatish: \(item.name)", "Show \(item.name) in Finder", "Показать в Finder: \(item.name)"))
                 .help(L("Finder'da ko'rsatish", "Show in Finder", "Показать в Finder"))
             }
             if item.kind == .loginItem || item.kind == .userAgent {
@@ -470,12 +471,14 @@ struct StartupRow: View {
                     Image(systemName: "minus.circle.fill").font(.system(size: 17)).foregroundStyle(.red)
                 }
                 .buttonStyle(.borderless)
+                .accessibilityLabel(L("Olib tashlash: \(item.name)", "Remove \(item.name)", "Удалить: \(item.name)"))
                 .help(L("Olib tashlash", "Remove", "Удалить"))
                 .disabled(busy)
             }
             if item.kind != .loginItem {
                 Toggle("", isOn: Binding(get: { item.enabled }, set: toggle))
                     .labelsHidden()
+                    .accessibilityLabel(L("Mac bilan ishga tushsin: \(item.name)", "Open at login: \(item.name)", "Запускать при входе: \(item.name)"))
                     .toggleStyle(.switch)
                     .disabled(busy)
                     .help(item.enabled ? L("Yoqilgan", "On", "Включено") : L("O'chirilgan", "Off", "Отключено"))
@@ -520,5 +523,8 @@ struct StartupEntryRow: View {
         .padding(.vertical, 3)
         .contentShape(Rectangle())
         .onTapGesture(perform: open)
+        .accessibleRow(StartupView.title,
+                       value: store.loaded ? L("\(store.enabledCount) ta yoqilgan", "\(store.enabledCount) on", "Включено: \(store.enabledCount)") : "",
+                       action: open)
     }
 }

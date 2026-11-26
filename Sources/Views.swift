@@ -364,6 +364,9 @@ struct SidebarRow: View {
             }
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityValue(trailing == "…" ? scanningSpeech : (trailing ?? ""))
     }
 }
 
@@ -384,6 +387,10 @@ struct DiskFooter: View {
                 .monospacedDigit()
         }
         .padding(14)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(L("\(disk.name) diski: \(disk.free.bytes) bo'sh, jami \(disk.total.bytes)",
+                              "\(disk.name): \(disk.free.bytes) free of \(disk.total.bytes)",
+                              "\(disk.name): свободно \(disk.free.bytes) из \(disk.total.bytes)"))
         // Tor oynada ro'yxat ostidan o'tib ketsa, matnlar ustma-ust tushmasin.
         .background(.regularMaterial)
         .overlay(alignment: .top) { Divider() }
@@ -445,6 +452,7 @@ struct IconTile: View {
             .foregroundStyle(.white)
             .frame(width: size, height: size)
             .background(color.gradient, in: RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
+            .accessibilityHidden(true)
     }
 }
 
@@ -472,12 +480,18 @@ struct CategoryRow: View {
             }
             .contentShape(Rectangle())
             .onTapGesture(perform: open)
+            .accessibleRow(category.title,
+                           value: store.scanning.contains(category) ? scanningSpeech
+                               : store.selectedSize(category) > 0 ? "\(store.selectedSize(category).bytes), \(subtitle)" : subtitle,
+                           hint: L("Ichini ochadi", "Opens the list", "Открывает список"),
+                           action: open)
 
             Toggle("", isOn: Binding(
                 get: { store.isOn(category) },
                 set: { store.setAll(category, $0) }
             ))
             .labelsHidden()
+            .accessibilityLabel(L("Tozalashga qo'shish: \(category.title)", "Include in cleanup: \(category.title)", "Включить в очистку: \(category.title)"))
             .toggleStyle(.switch)
             .disabled(store.isBusy || (store.items[category] ?? []).isEmpty)
 
@@ -485,6 +499,8 @@ struct CategoryRow: View {
                 Image(systemName: "chevron.right").foregroundStyle(.tertiary)
             }
             .buttonStyle(.borderless)
+            // Qatorning o'zi ochadi — VoiceOver bir xil tugmani ikki marta o'qimasin.
+            .accessibilityHidden(true)
         }
         .padding(.vertical, 3)
     }
@@ -625,6 +641,14 @@ struct ItemRow: View {
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .onTapGesture(perform: toggle)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(item.needsReview ? "\(item.name), \(L("tekshiring", "review", "проверьте"))" : item.name)
+        .accessibilityValue("\(item.selected ? L("tanlangan", "selected", "выбрано") : L("tanlanmagan", "not selected", "не выбрано")), \(item.size.bytes), \(item.detail)")
+        .accessibilityAddTraits(item.selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction(.default, toggle)
+        .accessibilityAction(named: L("Finder'da ko'rsatish", "Show in Finder", "Показать в Finder")) {
+            NSWorkspace.shared.activateFileViewerSelecting(item.urls)
+        }
         .contextMenu {
             Button(L("Finder'da ko'rsatish", "Show in Finder", "Показать в Finder")) { NSWorkspace.shared.activateFileViewerSelecting(item.urls) }
         }
@@ -662,6 +686,11 @@ struct ResultView: View {
         }
         .padding(28)
         .frame(width: 380)
+        .onAppear {
+            var text = L("\(result.freed.bytes) bo'shatildi.", "\(result.freed.bytes) freed.", "Освобождено \(result.freed.bytes).")
+            if result.movedToTrash > 0 { text += " " + L("\(result.movedToTrash.bytes) Savatga ko'chirildi.", "\(result.movedToTrash.bytes) moved to the Trash.", "\(result.movedToTrash.bytes) в Корзине.") }
+            announce(text)
+        }
     }
 }
 
@@ -784,6 +813,19 @@ struct SettingsView: View {
                      : L("Menyu satri belgisi yoqilgan bo'lsa, oynani yopganda Farrosh fonda ishlashda davom etadi. Eslatma faqat 500 MB dan ko'p tozalanadigan narsa yig'ilsa keladi.",
                          "With the menu bar icon on, Farrosh keeps running after you close the window. Reminders only arrive when more than 500 MB can be cleaned.",
                          "Если значок в строке меню включён, Farrosh продолжает работать после закрытия окна. Напоминание приходит, только если можно очистить больше 500 МБ."))
+            }
+
+            Section {
+                LabeledContent(L("Versiya", "Version", "Версия"),
+                               value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
+                Link(L("Versiyalar tarixi", "Version history", "История версий"),
+                     destination: URL(string: "https://github.com/bahodirhasan/farrosh/blob/main/CHANGELOG.md")!)
+            } header: {
+                Text(L("Dastur haqida", "About", "О программе"))
+            } footer: {
+                Text(L("Farrosh VoiceOver bilan to'liq ishlaydi: qatorlar tugma sifatida o'qiladi, skanerlash va tozalash natijalari ovozli aytiladi.",
+                       "Farrosh works fully with VoiceOver: rows read as buttons, and scan and cleanup results are spoken.",
+                       "Farrosh полностью работает с VoiceOver: строки читаются как кнопки, итоги сканирования и очистки озвучиваются."))
             }
         }
         .formStyle(.grouped)

@@ -2,6 +2,12 @@
 
 ### ⬇️ [Dasturni yuklab olish — Farrosh.zip](https://github.com/bahodirhasan/farrosh/releases/latest/download/Farrosh.zip)
 
+### ⬇️ [Windows uchun yuklab olish — Farrosh_1.0.0_x64-setup.exe](https://github.com/bahodirhasan/farrosh/releases/download/windows-v1.0.0/Farrosh_1.0.0_x64-setup.exe)
+
+*Windows 10 va 11, 64 bit. Batafsil: [Farrosh for Windows](windows/README.md).*
+
+**Ko'zi ojizlar uchun:** VoiceOver bilan to'liq ishlaydi. Har bir versiyada nima o'zgargani: [versiyalar tarixi](CHANGELOG.md).
+
 *macOS uchun tayyor dastur. Yuklab oling → oching → Applications papkasiga ko'chiring → birinchi marta o'ng tugma → Ochish (Open).*
 
 Mac'ni keraksiz fayllardan tozalaydigan dastur: kesh, loglar, eski o'rnatish fayllari, o'chirilgan ilovalar qoldig'i va boshqalar. Interfeys o'zbek, ingliz va rus tillarida.

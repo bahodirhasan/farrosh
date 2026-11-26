@@ -149,6 +149,7 @@ final class LargeFilesStore: ObservableObject {
                 self.selected = self.selected.filter { id in found.contains { $0.id == id } }
                 self.scanning = false
                 self.scanned = true
+                announce(L("Katta fayllar qidiruvi tugadi: \(found.count) ta fayl.", "Large file search finished: \(found.count) files.", "Поиск больших файлов завершён: \(found.count)."))
             }
         }
     }
@@ -390,5 +391,8 @@ struct LargeFilesEntryRow: View {
         .padding(.vertical, 3)
         .contentShape(Rectangle())
         .onTapGesture(perform: open)
+        .accessibleRow(LargeFilesView.title,
+                       value: store.scanning ? scanningSpeech : (store.scanned ? store.visibleSize.bytes : ""),
+                       action: open)
     }
 }

@@ -36,6 +36,12 @@ final class Store: ObservableObject {
                 await MainActor.run {
                     self.items[category] = found
                     self.scanning.remove(category)
+                    if self.scanning.isEmpty {
+                        let total = self.totalSelected
+                        announce(total > 0
+                            ? L("Skanerlash tugadi. Tozalash mumkin: \(total.bytes).", "Scan finished. Ready to clean: \(total.bytes).", "Сканирование завершено. Можно очистить: \(total.bytes).")
+                            : L("Skanerlash tugadi. Mac toza.", "Scan finished. Your Mac is clean.", "Сканирование завершено. Mac чист."))
+                    }
                 }
             }
         }

@@ -345,6 +345,9 @@ struct AppsEntryRow: View {
         .padding(.vertical, 3)
         .contentShape(Rectangle())
         .onTapGesture(perform: open)
+        .accessibleRow(L("Ilovalarni boshqarish", "Manage apps", "Управление приложениями"),
+                       value: apps.apps.isEmpty ? "" : L("\(apps.apps.count) ta ilova", "\(apps.apps.count) apps", "Приложений: \(apps.apps.count)"),
+                       action: open)
     }
 }
 
@@ -502,12 +505,13 @@ struct AppRow: View {
             }
             .buttonStyle(.borderless)
             .disabled(!checkable)
-            .accessibilityLabel(checked ? L("Belgini olib tashlash", "Unmark", "Снять отметку") : L("O'chirish uchun belgilash", "Mark for uninstall", "Отметить для удаления"))
+            .accessibilityLabel(checked ? L("Belgini olib tashlash: \(app.name)", "Unmark \(app.name)", "Снять отметку: \(app.name)") : L("O'chirish uchun belgilash: \(app.name)", "Mark \(app.name) for uninstall", "Отметить для удаления: \(app.name)"))
             .help(checkable ? L("O'chirish uchun belgilash", "Mark for uninstall", "Отметить для удаления")
                             : L("Farrosh o'zini o'chira olmaydi", "Farrosh can't uninstall itself", "Farrosh не может удалить сам себя"))
             Image(nsImage: NSWorkspace.shared.icon(forFile: app.url.path))
                 .resizable()
                 .frame(width: 34, height: 34)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(app.name).lineLimit(1)
                 if !subtitle.isEmpty {

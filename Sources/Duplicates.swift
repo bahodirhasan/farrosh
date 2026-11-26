@@ -115,6 +115,8 @@ final class DuplicatesStore: ObservableObject {
                 self.selected = self.selected.filter { id in found.contains { $0.files.contains { $0.id == id } } }
                 self.scanning = false
                 self.scanned = true
+                announce(found.isEmpty ? L("Dublikatlar topilmadi.", "No duplicates found.", "Дубликаты не найдены.")
+                    : L("\(found.count) guruh dublikat topildi, ortiqcha nusxalar: \(self.wasted.bytes).", "Found \(found.count) groups of duplicates, extra copies: \(self.wasted.bytes).", "Найдено групп дубликатов: \(found.count), лишние копии: \(self.wasted.bytes)."))
             }
         }
     }
